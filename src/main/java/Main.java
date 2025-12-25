@@ -1,46 +1,69 @@
 import java.nio.ByteBuffer;
+
+import activation_recognition.ActivationRecognizer;
 import audio_capture.AudioCapture;
 import audio_capture.MicrophoneCapture;
-import speech_recognition.SpeechRecognizer;
 import speech_recognition.VoskRecognizer;
 
 public class Main {
 
     public static void main(String[] args) throws Exception {
         AudioCapture capture = new MicrophoneCapture();
-        SpeechRecognizer recognizer = new VoskRecognizer("src/main/resources/models/vosk-model-small-ru-0.22");
-
         capture.startCapture();
-        recognizer.start();
 
-        System.out.println("Говори... (Ctrl+C для выхода)");
+        ActivationRecognizer wakeRecognizer = new ActivationRecognizer("src/main/resources/models/vosk-model-small-ru-0.22");
+        VoskRecognizer commandRecognizer = new VoskRecognizer("src/main/resources/models/vosk-model-small-ru-0.22"); // твой обычный
 
-        try {
-            while (true) {
-                ByteBuffer chunk = capture.getCapturedData();
-                if (chunk != null && chunk.hasRemaining()) {
-                    byte[] data = new byte[chunk.remaining()];
-                    chunk.get(data);
+        boolean listeningForCommand = false;
+        long commandTimeout = 0;
+        final long TIMEOUT_MS = 8000;
 
-                    boolean phraseReady = recognizer.acceptAudioChunk(data);
+        System.out.println(wakeRecognizer.buildGrammarString());
 
-                    if (phraseReady) {
-                        String text = ((VoskRecognizer) recognizer).getCleanTextResult();
-                        if (!text.isEmpty()) {
-                            System.out.println("Распознано: " + text);
-                        }
+        while (true) {
+            if (!listeningForCommand && !wakeRecognizer.isRunning()) {
+                wakeRecognizer.start();
+            }
+
+            ByteBuffer chunk = capture.getCapturedData();
+            if (chunk != null && chunk.hasRemaining()) {
+                byte[] data = new byte[chunk.remaining()];
+                chunk.get(data);
+
+                if (wakeRecognizer.processChunk(data)) {
+
+                    String keyword = wakeRecognizer.getDetectedKeyword();
+
+                    if (keyword != null && !keyword.trim().isEmpty()) {
+                        wakeRecognizer.stop();
+                        System.out.println(">>> ЛЮМЬЕР УСЛЫШАН! (" + keyword + ") <<<");
+                        listeningForCommand = true;
+                        commandTimeout = System.currentTimeMillis() + TIMEOUT_MS;
+                        commandRecognizer.start();
                     }
-
-                    // Можно показывать частичное для отладки
-                    // String partial = recognizer.getPartialResult();
-                    // if (!partial.isEmpty()) System.out.println("... " + partial);
                 }
 
-                Thread.sleep(20); // ~50 fps — хороший баланс
+                if (listeningForCommand) {
+                    boolean commandReady = commandRecognizer.acceptAudioChunk(data);
+
+                    if (commandReady) {
+                        String command = commandRecognizer.getCleanTextResult();
+                        if (!command.isEmpty()) {
+                            System.out.println("Команда: " + command);
+                        }
+                        listeningForCommand = false;
+                        commandRecognizer.stop();
+                    }
+
+                    if (System.currentTimeMillis() > commandTimeout) {
+                        System.out.println("Таймаут команды — возвращаемся к ожиданию Люмьер");
+                        listeningForCommand = false;
+                        commandRecognizer.stop();
+                    }
+                }
             }
-        } finally {
-            recognizer.stop();
-            capture.stopCapture();
+
+            Thread.sleep(20);
         }
     }
 }
