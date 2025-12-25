@@ -4,7 +4,10 @@ import javax.sound.sampled.AudioFormat;
 import javax.sound.sampled.AudioSystem;
 import javax.sound.sampled.DataLine;
 import javax.sound.sampled.TargetDataLine;
+import java.nio.BufferOverflowException;
 import java.nio.ByteBuffer;
+
+import static java.lang.System.out;
 
 public class MicrophoneCapture implements AudioCapture {
     private static final AudioFormat FORMAT = new AudioFormat(
@@ -19,7 +22,7 @@ public class MicrophoneCapture implements AudioCapture {
     private boolean running;
 
     // Небольшой буфер, куда будем складывать свежие данные
-    private ByteBuffer buffer = ByteBuffer.allocate(128 * 1024); // ~ 4 секунды звука
+    private ByteBuffer buffer = ByteBuffer.allocate(1024 * 1024); // ~ 32–33 секунды звука
 
     @Override
     public void startCapture() throws Exception {
@@ -38,12 +41,18 @@ public class MicrophoneCapture implements AudioCapture {
             byte[] tempBuffer = new byte[1024];
             while (running) {
                 int count = microphone.read(tempBuffer, 0, tempBuffer.length);
-                if (count > 0)
-                    buffer.put(tempBuffer, 0, count);
+                if (count > 0) {
+                    try {
+                        buffer.put(tempBuffer, 0, count);
+                    } catch (BufferOverflowException e) {
+                        System.err.println("Буфер переполнен! Пропускаем данные...");
+                        buffer.compact();
+                    }
+                }
             }
         }).start();
 
-        System.out.println("Микрофон запущен. Говорите!");
+        out.println("Микрофон запущен. Говорите!");
     }
 
     @Override
@@ -52,7 +61,7 @@ public class MicrophoneCapture implements AudioCapture {
         if (microphone != null) {
             microphone.stop();
             microphone.close();
-            System.out.println("Микрофон остановлен.");
+            out.println("Микрофон остановлен.");
         }
     }
 
