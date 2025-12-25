@@ -1,51 +1,50 @@
 package nlp_parsing;
 
 import java.util.*;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
+import java.util.regex.*;
 
-public class CommandParserImpl implements CommandParser {
+public class CommandParserImpl {
 
-    private final Map<Pattern, CommandTemplate> commandPatterns = new HashMap<>();
+    private static final Map<Pattern, CommandTemplate> templates = new HashMap<>();
 
-    public CommandParserImpl() {
-        addPattern("откр(ой|ывает?) браузер", "OPEN_BROWSER");
-        addPattern("(запусти|включи) музыку", "PLAY_MUSIC");
-        addPattern("(какая|узнай|подскажи) погод(у|а)( в (.+))?", "CHECK_WEATHER", "city");
-        addPattern("(сколько времени|текущее время)", "CHECK_TIME");
+    static {
+
+        templates.put(
+                Pattern.compile("(открой|запусти)\\s+браузер", Pattern.CASE_INSENSITIVE),
+                new CommandTemplate("OPEN_BROWSER")
+        );
+
+        templates.put(
+                Pattern.compile("(погода|погоду|погоде|погодой|погоду|погода)\\s+([а-яё]+)", Pattern.CASE_INSENSITIVE | Pattern.UNICODE_CASE),
+                new CommandTemplate("CHECK_WEATHER", "city")
+        );
+
+        templates.put(
+                Pattern.compile("(который час|сколько время|который|сколько времени)", Pattern.CASE_INSENSITIVE),
+                new CommandTemplate("CHECK_TIME")
+        );
     }
 
-    private void addPattern(String regex, String intent, String... parameters) {
-        Pattern pattern = Pattern.compile(regex, Pattern.CASE_INSENSITIVE | Pattern.UNICODE_CASE);
-        commandPatterns.put(pattern, new CommandTemplate(intent, Arrays.asList(parameters)));
-    }
-
-    @Override
     public Command parse(String text) {
-        for (Map.Entry<Pattern, CommandTemplate> entry : commandPatterns.entrySet()) {
+        String lowerText = text.toLowerCase();
+
+        for (Map.Entry<Pattern, CommandTemplate> entry : templates.entrySet()) {
             Pattern pattern = entry.getKey();
             CommandTemplate template = entry.getValue();
 
-            Matcher matcher = pattern.matcher(text);
-            if (matcher.matches()) {
+            Matcher matcher = pattern.matcher(lowerText);
+            if (matcher.find()) {
                 Map<String, String> parameters = new HashMap<>();
-                List<String> parameterNames = template.getParameters();
 
-                for (int i = 0; i < parameterNames.size(); i++) {
-                    String paramName = parameterNames.get(i);
-                    String paramValue = matcher.group(i + 1); // Группы начинаются с 1
-
-                    if (paramValue != null) {
-                        parameters.put(paramName, paramValue.trim());
-                    } else {
-                        parameters.put(paramName, "");
-                    }
+                if (template.getParameters().size() > 0 && matcher.groupCount() > 0) {
+                    String cityName = matcher.group(2).trim();
+                    parameters.put("city", cityName);
                 }
 
                 return new Command(template.getIntent(), parameters);
             }
         }
 
-        return new Command("UNKNOWN", Collections.emptyMap());
+        return new Command("UNKNOWN", Map.of());
     }
 }
