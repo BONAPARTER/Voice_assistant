@@ -7,6 +7,8 @@ import nlp_parsing.Command;
 import nlp_parsing.CommandHandler;
 import nlp_parsing.CommandParserImpl;
 
+import static java.lang.System.out;
+
 public class Main {
 
     public static void main(String[] args) throws Exception {
@@ -23,7 +25,7 @@ public class Main {
         long commandTimeout = 0;
         final long TIMEOUT_MS = 8000;
 
-        System.out.println(wakeRecognizer.buildGrammarString());
+        out.println(wakeRecognizer.buildGrammarString());
 
 
         CommandParserImpl parser = new CommandParserImpl();
@@ -46,7 +48,7 @@ public class Main {
 
                     if (keyword != null && !keyword.trim().isEmpty()) {
                         wakeRecognizer.stop();
-                        System.out.println(">>> ЛЮМЬЕР УСЛЫШАН! (" + keyword + ") <<<");
+                        out.println(">>> ЛЮМЬЕР УСЛЫШАН! (" + keyword + ") <<<");
                         listeningForCommand = true;
                         commandTimeout = System.currentTimeMillis() + TIMEOUT_MS;
                         commandRecognizer.start();
@@ -60,7 +62,7 @@ public class Main {
                         String text = commandRecognizer.getCleanTextResult();
 
                         if (!text.isEmpty()) {
-                            System.out.println("Команда: " + text);
+                            out.println("Команда: " + text);
 
                             Command command = parser.parse(text);
 
@@ -73,7 +75,7 @@ public class Main {
                     }
 
                     if (System.currentTimeMillis() > commandTimeout) {
-                        System.out.println("Таймаут команды — возвращаемся к ожиданию Люмьера");
+                        out.println("Таймаут команды — возвращаемся к ожиданию Люмьера");
                         listeningForCommand = false;
                         commandRecognizer.stop();
                         wakeRecognizer.start();

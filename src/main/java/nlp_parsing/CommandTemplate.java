@@ -6,9 +6,9 @@ public class CommandTemplate {
     private final String intent;
     private final List<String> parameters;
 
-    public CommandTemplate(String intent, List<String> parameters) {
+    public CommandTemplate(String intent, String... parameters) {
         this.intent = intent;
-        this.parameters = parameters;
+        this.parameters = List.of(parameters);
     }
 
     public String getIntent() {

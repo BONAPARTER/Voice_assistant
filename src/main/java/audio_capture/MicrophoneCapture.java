@@ -7,6 +7,7 @@ import javax.sound.sampled.TargetDataLine;
 import java.nio.BufferOverflowException;
 import java.nio.ByteBuffer;
 
+import static java.lang.System.err;
 import static java.lang.System.out;
 
 public class MicrophoneCapture implements AudioCapture {
@@ -45,7 +46,7 @@ public class MicrophoneCapture implements AudioCapture {
                     try {
                         buffer.put(tempBuffer, 0, count);
                     } catch (BufferOverflowException e) {
-                        System.err.println("Буфер переполнен! Пропускаем данные...");
+                        err.println("Буфер переполнен! Пропускаем данные...");
                         buffer.compact();
                     }
                 }
