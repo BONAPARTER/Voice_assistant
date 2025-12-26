@@ -11,6 +11,7 @@ import static java.lang.System.err;
 import static java.lang.System.out;
 
 public class MicrophoneCapture implements AudioCapture {
+
     private static final AudioFormat FORMAT = new AudioFormat(
             16000,
             16,
@@ -22,14 +23,14 @@ public class MicrophoneCapture implements AudioCapture {
     private TargetDataLine microphone;
     private boolean running;
 
-    // Небольшой буфер, куда будем складывать свежие данные
     private ByteBuffer buffer = ByteBuffer.allocate(1024 * 1024); // ~ 32–33 секунды звука
 
     @Override
     public void startCapture() throws Exception {
         DataLine.Info info = new DataLine.Info(TargetDataLine.class, FORMAT);
-        if (!AudioSystem.isLineSupported(info))
-            throw new Exception("Твой микрофон не поддерживает нужный формат звука");
+        if (!AudioSystem.isLineSupported(info)) {
+            throw new Exception("Микрофон не поддерживает нужный формат звука");
+        }
 
         microphone = (TargetDataLine) AudioSystem.getLine(info);
         microphone.open(FORMAT);
@@ -37,17 +38,22 @@ public class MicrophoneCapture implements AudioCapture {
 
         running = true;
 
-
         new Thread(() -> {
             byte[] tempBuffer = new byte[1024];
             while (running) {
                 int count = microphone.read(tempBuffer, 0, tempBuffer.length);
+
                 if (count > 0) {
                     try {
-                        buffer.put(tempBuffer, 0, count);
+                        if (buffer.remaining() < count) {
+                            err.println("Буфер переполнен! Пропускаем данные...");
+                            buffer.clear();
+                        } else {
+                            buffer.put(tempBuffer, 0, count);
+                        }
                     } catch (BufferOverflowException e) {
-                        err.println("Буфер переполнен! Пропускаем данные...");
-                        buffer.compact();
+                        err.println("Буфер переполнен! Перезапускаем буфер...");
+                        buffer.clear();
                     }
                 }
             }
@@ -68,12 +74,18 @@ public class MicrophoneCapture implements AudioCapture {
 
     @Override
     public ByteBuffer getCapturedData() {
-        if(buffer.position() > 0) {
+        if (buffer.position() > 0) {
             buffer.flip();
-            ByteBuffer result = buffer.duplicate();
+
+            ByteBuffer result = ByteBuffer.allocate(buffer.remaining());
+            result.put(buffer);
+            result.flip();
+
             buffer.clear();
+
             return result;
         }
+
         return null;
     }
 

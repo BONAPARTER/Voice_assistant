@@ -12,22 +12,38 @@ import static java.lang.System.out;
 public class ActivationRecognizer {
 
     private final String modelPath;
+    private final String[] KEYWORDS;
     private Model model;
     private Recognizer recognizer;
-
-
-    private static final String[] KEYWORDS = {
-            "люмьер",
-            "эй люмьер",
-            "люмьер помощник",
-            "люмьер слушай"
-    };
 
     private String lastFullResult = "";
     private String lastPartialResult = "";
 
-    public ActivationRecognizer(String modelPath) {
+    public ActivationRecognizer(String modelPath, String language) {
         this.modelPath = modelPath;
+
+        if ("ru".equalsIgnoreCase(language)) {
+            this.KEYWORDS = new String[]{
+                    "люмьер",
+                    "эй люмьер",
+                    "люмьер помощник",
+                    "люмьер слушай"
+            };
+        } else if ("en".equalsIgnoreCase(language)) {
+            this.KEYWORDS = new String[]{
+                    "lumiere",
+                    "hey lumiere",
+                    "lumiere assistant",
+                    "lumiere listen"
+            };
+        } else {
+            this.KEYWORDS = new String[]{
+                    "люмьер",
+                    "эй люмьер",
+                    "люмьер помощник",
+                    "люмьер слушай"
+            };
+        }
     }
 
     public String buildGrammarString() {
@@ -49,6 +65,7 @@ public class ActivationRecognizer {
             String grammar = buildGrammarString();
 
             recognizer = new Recognizer(model, 16000.0f, grammar);
+            out.println("ActivationRecognizer запущен - ждём активационное слово");
         } catch (IOException e) {
             throw new Exception("Не удалось загрузить модель для wake-word: " + e.getMessage());
         }
