@@ -12,13 +12,15 @@ import static java.lang.System.out;
 public class VoskRecognizer implements SpeechRecognizer {
 
     private final String modelPath;
+    private final String language;
     private Model model;
     private Recognizer recognizer;
     private String lastFullResult = "";
     private String lastPartialResult = "";
 
-    public VoskRecognizer(String modelPath) {
+    public VoskRecognizer(String modelPath, String language) {
         this.modelPath = modelPath;
+        this.language = language;
     }
 
     @Override
@@ -28,7 +30,7 @@ public class VoskRecognizer implements SpeechRecognizer {
         try {
             model = new Model(modelPath);
             recognizer = new Recognizer(model, 16000.0f);
-            out.println("Vosk инициализирован");
+            out.println("Vosk инициализирован для языка: " + language.toUpperCase());
         } catch (IOException e) {
             throw new Exception("Не удалось загрузить модель Vosk: " + e.getMessage());
         }
