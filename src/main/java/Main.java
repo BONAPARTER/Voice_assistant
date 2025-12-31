@@ -1,7 +1,11 @@
 import java.nio.ByteBuffer;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
+
 import activation_recognition.ActivationRecognizer;
 import audio_capture.AudioCapture;
 import audio_capture.MicrophoneCapture;
+import speech_recognition.SpeechRecognizer;
 import speech_recognition.VoskRecognizer;
 import nlp_parsing.Command;
 import nlp_parsing.CommandHandler;
@@ -12,10 +16,14 @@ import static java.lang.System.out;
 
 public class Main {
 
-    public static void main(String[] args) throws Exception {
+    private enum State {
+        WAITING_FOR_WAKE_WORD,
+        LISTENING_FOR_COMMAND,
+        PROCESSING
+    }
 
+    public static void main(String[] args) throws Exception {
         if (args.length == 0) {
-            // Передаём колбэк для обработки выбора языка
             LanguageSelectorUI.show((modelPath, languageCode) -> {
                 try {
                     startVoiceAssistant(modelPath, languageCode);
@@ -28,77 +36,161 @@ public class Main {
         }
     }
 
-
     private static void startVoiceAssistant(String modelPath, String language) throws Exception {
-            out.println("Запуск голосового ассистента...");
-            out.println("Модель: " + modelPath);
-            out.println("Язык: " + language);
+        out.println("Запуск голосового ассистента...");
+        out.println("Модель: " + modelPath);
+        out.println("Язык:   " + language);
 
-            AudioCapture capture = new MicrophoneCapture();
-            capture.startCapture();
+        AtomicReference<State> state = new AtomicReference<>(State.WAITING_FOR_WAKE_WORD);
+        AtomicBoolean running = new AtomicBoolean(true);
+        final Object lock = new Object();
 
-            ActivationRecognizer wakeRecognizer = new ActivationRecognizer(modelPath, language);
-            VoskRecognizer commandRecognizer = new VoskRecognizer(modelPath, language);
+        CommandParserImpl parser = new CommandParserImpl(language);
+        CommandHandler handler = new CommandHandler();
 
-            boolean listeningForCommand = false;
-            long commandTimeout = 0;
-            final long TIMEOUT_MS = 8000;
+        final long COMMAND_TIMEOUT_MS = 8500;
 
-            CommandParserImpl parser = new CommandParserImpl(language);
-            CommandHandler handler = new CommandHandler();
-
-
-            while (true) {
-
-                if (!listeningForCommand && !wakeRecognizer.isRunning())
-                    wakeRecognizer.start();
-
-                ByteBuffer chunk = capture.getCapturedData();
-                if (chunk != null && chunk.hasRemaining()) {
-                    byte[] data = new byte[chunk.remaining()];
-                    chunk.get(data);
-
-                    if (!listeningForCommand && wakeRecognizer.processChunk(data)) {
-                        String keyword = wakeRecognizer.getDetectedKeyword();
-
-                        if (keyword != null && !keyword.trim().isEmpty()) {
-                            wakeRecognizer.stop();
-                            out.println(">>> ЛЮМЬЕР УСЛЫШАЛ! (" + keyword + ") <<<");
-                            listeningForCommand = true;
-                            commandTimeout = System.currentTimeMillis() + TIMEOUT_MS;
-                            commandRecognizer.start();
+        try (AudioCapture capture = new MicrophoneCapture()) {
+            // Поток обнаружения ключевого слова
+            Thread wakeThread = new Thread(() -> {
+                while (running.get()) {
+                    synchronized (lock) {
+                        while (state.get() != State.WAITING_FOR_WAKE_WORD && running.get()) {
+                            try {
+                                lock.wait();
+                            } catch (InterruptedException e) {
+                                Thread.currentThread().interrupt();
+                                return;
+                            }
                         }
                     }
 
-                    if (listeningForCommand) {
-                        boolean commandReady = commandRecognizer.acceptAudioChunk(data);
+                    if (!running.get()) break;
 
-                        if (commandReady) {
-                            String text = commandRecognizer.getCleanTextResult();
+                    try (ActivationRecognizer wakeRecognizer = new ActivationRecognizer(modelPath, language)) {
+                        while (state.get() == State.WAITING_FOR_WAKE_WORD && running.get()) {
+                            ByteBuffer chunk = capture.getCapturedData();
 
-                            if (!text.isEmpty()) {
-                                out.println("Команда: " + text);
-
-                                Command command = parser.parse(text);
-
-                                handler.handle(command);
+                            if (chunk == null || !chunk.hasRemaining()) {
+                                try {
+                                    Thread.sleep(50);
+                                } catch (InterruptedException e) {
+                                    Thread.currentThread().interrupt();
+                                }
+                                continue;
                             }
 
-                            listeningForCommand = false;
-                            commandRecognizer.stop();
-                            wakeRecognizer.start();
-                        }
+                            byte[] data = new byte[chunk.remaining()];
+                            chunk.get(data);
 
-                        if (System.currentTimeMillis() > commandTimeout) {
-                            out.println("Таймаут команды — возвращаемся к ожиданию Люмьера?");
-                            listeningForCommand = false;
-                            commandRecognizer.stop();
-                            wakeRecognizer.start();
+                            if (wakeRecognizer.processChunk(data)) {
+                                String keyword = wakeRecognizer.getDetectedKeyword();
+                                if (keyword != null && !keyword.trim().isEmpty()) {
+                                    out.println(">>> ЛЮМЬЕР УСЛЫШАЛ! (" + keyword + ") <<<");
+                                    synchronized (lock) {
+                                        state.set(State.LISTENING_FOR_COMMAND);
+                                        lock.notifyAll();
+                                    }
+                                    break;
+                                }
+                            }
                         }
+                    } catch (Exception e) {
+                        e.printStackTrace();
                     }
                 }
+            }, "Wake-Word-Thread");
 
-                Thread.sleep(20);
+            // Поток распознавания команды
+            Thread commandThread = new Thread(() -> {
+                while (running.get()) {
+                    synchronized (lock) {
+                        while (state.get() != State.LISTENING_FOR_COMMAND && running.get()) {
+                            try {
+                                lock.wait();
+                            } catch (InterruptedException e) {
+                                Thread.currentThread().interrupt();
+                                return;
+                            }
+                        }
+                    }
+
+                    if (!running.get()) break;
+
+                    try (VoskRecognizer recognizer = new VoskRecognizer(modelPath, language)) {
+                        long commandStartTime = System.currentTimeMillis();
+                        boolean done = false;
+
+                        while (!done && running.get() && state.get() == State.LISTENING_FOR_COMMAND) {
+                            if (System.currentTimeMillis() - commandStartTime > COMMAND_TIMEOUT_MS) {
+                                out.println("Таймаут команды");
+                                done = true;
+                                break;
+                            }
+
+                            ByteBuffer chunk = capture.getCapturedData();
+
+                            if (chunk == null || !chunk.hasRemaining()) {
+                                try {
+                                    Thread.sleep(50);
+                                } catch (InterruptedException e) {
+                                    Thread.currentThread().interrupt();
+                                }
+                                continue;
+                            }
+
+                            byte[] data = new byte[chunk.remaining()];
+                            chunk.get(data);
+
+                            boolean isFinal = recognizer.acceptAudioChunk(data);
+                            if (isFinal) {
+                                String text = recognizer.getCleanTextResult();
+                                if (!text.trim().isEmpty()) {
+                                    out.println("Распознано: " + text);
+                                    Command command = parser.parse(text);
+                                    handler.handle(command);
+                                } else {
+                                    out.println("(пустой результат)");
+                                }
+                                done = true;
+                            }
+                        }
+
+                        synchronized (lock) {
+                            state.set(State.WAITING_FOR_WAKE_WORD);
+                            lock.notifyAll();
+                        }
+                    } catch (Exception e) {
+                        e.printStackTrace();
+                    }
+                }
+            }, "Command-Recognition-Thread");
+
+            wakeThread.setDaemon(true);
+            commandThread.setDaemon(true);
+
+            wakeThread.start();
+            commandThread.start();
+
+            out.println("Ассистент запущен. Для выхода нажмите Ctrl+C\n");
+
+            Runtime.getRuntime().addShutdownHook(new Thread(() -> {
+                running.set(false);
+                synchronized (lock) {
+                    lock.notifyAll();
+                }
+                out.println("Завершение работы ассистента...");
+            }));
+
+            try {
+                Thread.currentThread().join();
+            } catch (InterruptedException e) {
+                running.set(false);
+                synchronized (lock) {
+                    lock.notifyAll();
+                }
+                out.println("Завершение работы ассистента...");
             }
         }
+    }
 }

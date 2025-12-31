@@ -35,8 +35,8 @@ public class CheckWeatherCommand implements CommandAction {
                 latitude, longitude
         );
 
-        try {
-            HttpClient client = HttpClient.newHttpClient();
+        try (HttpClient client = HttpClient.newHttpClient()) {
+
             HttpRequest request = HttpRequest.newBuilder()
                     .uri(URI.create(url))
                     .build();
