@@ -1,5 +1,6 @@
 package activation_recognition;
 
+import custom_exceptions.NotLoadModelVosk;
 import org.vosk.LibVosk;
 import org.vosk.LogLevel;
 import org.vosk.Model;
@@ -9,7 +10,7 @@ import java.io.IOException;
 
 import static java.lang.System.out;
 
-public class ActivationRecognizer {
+public class ActivationRecognizer implements AutoCloseable {
 
     private final String modelPath;
     private final String[] KEYWORDS;
@@ -19,7 +20,7 @@ public class ActivationRecognizer {
     private String lastFullResult = "";
     private String lastPartialResult = "";
 
-    public ActivationRecognizer(String modelPath, String language) {
+    public ActivationRecognizer(String modelPath, String language) throws NotLoadModelVosk {
         this.modelPath = modelPath;
 
         if ("ru".equalsIgnoreCase(language)) {
@@ -31,10 +32,7 @@ public class ActivationRecognizer {
             };
         } else if ("en".equalsIgnoreCase(language)) {
             this.KEYWORDS = new String[]{
-                    "lumiere",
-                    "hey lumiere",
-                    "lumiere assistant",
-                    "lumiere listen"
+                    "lumiere"
             };
         } else {
             this.KEYWORDS = new String[]{
@@ -43,6 +41,19 @@ public class ActivationRecognizer {
                     "люмьер помощник",
                     "люмьер слушай"
             };
+        }
+
+        LibVosk.setLogLevel(LogLevel.WARNINGS);
+
+        try {
+            model = new Model(this.modelPath);
+
+            String grammar = buildGrammarString();
+
+            recognizer = new Recognizer(model, 16000.0f, grammar);
+            out.println("ActivationRecognizer запущен - ждём активационное слово");
+        } catch (IOException e) {
+            throw new NotLoadModelVosk("Не удалось загрузить модель для wake-word: " + e.getMessage());
         }
     }
 
@@ -54,21 +65,6 @@ public class ActivationRecognizer {
         }
         sb.append("]");
         return sb.toString();
-    }
-
-    public void start() throws Exception {
-        LibVosk.setLogLevel(LogLevel.WARNINGS);
-
-        try {
-            model = new Model(modelPath);
-
-            String grammar = buildGrammarString();
-
-            recognizer = new Recognizer(model, 16000.0f, grammar);
-            out.println("ActivationRecognizer запущен - ждём активационное слово");
-        } catch (IOException e) {
-            throw new Exception("Не удалось загрузить модель для wake-word: " + e.getMessage());
-        }
     }
 
     /**
@@ -123,7 +119,7 @@ public class ActivationRecognizer {
         return lastFullResult;
     }
 
-    public void stop() {
+    public void close() {
         if (recognizer != null) {
             recognizer.close();
             recognizer = null;

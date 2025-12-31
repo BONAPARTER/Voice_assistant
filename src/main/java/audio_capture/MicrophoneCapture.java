@@ -1,9 +1,8 @@
 package audio_capture;
 
-import javax.sound.sampled.AudioFormat;
-import javax.sound.sampled.AudioSystem;
-import javax.sound.sampled.DataLine;
-import javax.sound.sampled.TargetDataLine;
+import custom_exceptions.MicrophoneNotSupported;
+
+import javax.sound.sampled.*;
 import java.nio.BufferOverflowException;
 import java.nio.ByteBuffer;
 
@@ -25,17 +24,20 @@ public class MicrophoneCapture implements AudioCapture {
 
     private ByteBuffer buffer = ByteBuffer.allocate(1024 * 1024); // ~ 32–33 секунды звука
 
-    @Override
-    public void startCapture() throws Exception {
+    public MicrophoneCapture() throws MicrophoneNotSupported, RuntimeException{ // TODO: создать класс для обработки
         DataLine.Info info = new DataLine.Info(TargetDataLine.class, FORMAT);
         if (!AudioSystem.isLineSupported(info)) {
-            throw new Exception("Микрофон не поддерживает нужный формат звука");
+            throw new MicrophoneNotSupported("Микрофон не поддерживает нужный формат звука");
         }
 
-        microphone = (TargetDataLine) AudioSystem.getLine(info);
-        microphone.open(FORMAT);
-        microphone.start();
+        try {
+            microphone = (TargetDataLine) AudioSystem.getLine(info);
+            microphone.open(FORMAT);
+        } catch (LineUnavailableException e) {
+            throw new RuntimeException(e);
+        }
 
+        microphone.start();
         running = true;
 
         new Thread(() -> {
@@ -63,7 +65,7 @@ public class MicrophoneCapture implements AudioCapture {
     }
 
     @Override
-    public void stopCapture() {
+    public void close() {
         running = false;
         if (microphone != null) {
             microphone.stop();

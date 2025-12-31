@@ -28,7 +28,7 @@ public class CommandParserImpl {
                 new CommandTemplate("OPEN_BROWSER")
         );
         enTemplates.put(
-                Pattern.compile("(?:what's|check|tell me)\\s*the\\s*weather\\s*(?:in|at)?\\s*([a-z]+)", Pattern.CASE_INSENSITIVE),
+                Pattern.compile("(?:what's|check|tell me)\\s*weather\\s*([a-z]+)", Pattern.CASE_INSENSITIVE),
                 new CommandTemplate("CHECK_WEATHER", "city")
         );
         enTemplates.put(

@@ -1,5 +1,6 @@
 package speech_recognition;
 
+import custom_exceptions.NotLoadModelVosk;
 import org.vosk.LibVosk;
 import org.vosk.LogLevel;
 import org.vosk.Model;
@@ -9,7 +10,7 @@ import java.io.IOException;
 
 import static java.lang.System.out;
 
-public class VoskRecognizer implements SpeechRecognizer {
+public class VoskRecognizer implements SpeechRecognizer, AutoCloseable {
 
     private final String modelPath;
     private final String language;
@@ -18,13 +19,10 @@ public class VoskRecognizer implements SpeechRecognizer {
     private String lastFullResult = "";
     private String lastPartialResult = "";
 
-    public VoskRecognizer(String modelPath, String language) {
+    public VoskRecognizer(String modelPath, String language) throws NotLoadModelVosk {
         this.modelPath = modelPath;
         this.language = language;
-    }
 
-    @Override
-    public void start() throws Exception {
         LibVosk.setLogLevel(LogLevel.WARNINGS);
 
         try {
@@ -32,7 +30,7 @@ public class VoskRecognizer implements SpeechRecognizer {
             recognizer = new Recognizer(model, 16000.0f);
             out.println("Vosk инициализирован для языка: " + language.toUpperCase());
         } catch (IOException e) {
-            throw new Exception("Не удалось загрузить модель Vosk: " + e.getMessage());
+            throw new NotLoadModelVosk("Не удалось загрузить модель Vosk: " + e.getMessage());
         }
     }
 
@@ -64,7 +62,7 @@ public class VoskRecognizer implements SpeechRecognizer {
     }
 
     @Override
-    public void stop() {
+    public void close() {
         if (recognizer != null) {
             recognizer.close();
             recognizer = null;
